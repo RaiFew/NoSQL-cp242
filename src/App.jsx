@@ -49,7 +49,6 @@ const NAV = [
   { key: "appointments", label: "Appointments", icon: "📅" },
   { key: "records", label: "Medical Records", icon: "📋" },
   { key: "medicines", label: "Medicines", icon: "💊" },
-  { key: "cypher", label: "Cypher Explorer", icon: "🔍" },
 ];
 
 const statusColor = { Scheduled: "#0D9488", Completed: "#16A34A", Cancelled: "#DC2626" };
@@ -421,21 +420,53 @@ function Appointments({ appointments, setAppointments, patients, doctors }) {
 }
 
 // ─── Medical Records ──────────────────────────────────────────────────────────
-function Records({ records, patients, doctors }) {
+function Records({ records, setRecords, patients, doctors }) {
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [lastQuery, setLastQuery] = useState('');
+
+  const openAdd = () => {
+    setForm({ visitDate:"", diagnosis:"", treatment:"", patientId: patients[0]?.id||"", doctorId: doctors[0]?.id||"" });
+    setModal("add");
+  };
+  const openEdit = (r) => { setForm({ ...r }); setModal("edit"); };
+
+  const save = () => {
+    const pid = Number(form.patientId), did = Number(form.doctorId);
+    if (modal === "add") {
+      const newR = { ...form, id: Date.now(), patientId: pid, doctorId: did };
+      setRecords(prev => [...prev, newR]);
+      setLastQuery(`MATCH (p:Patient {patientId: ${pid}}), (d:Doctor {doctorId: ${did}})\nCREATE (r:MedicalRecord {\n  recordId: ${newR.id},\n  visitDate: date('${form.visitDate}'),\n  diagnosis: '${form.diagnosis}',\n  treatment: '${form.treatment}'\n})\nCREATE (p)-[:HAS_RECORD]->(r)\nCREATE (d)-[:DIAGNOSED_IN]->(r)\nRETURN r`);
+    } else {
+      setRecords(prev => prev.map(r => r.id === form.id ? { ...form, patientId: pid, doctorId: did } : r));
+      setLastQuery(`MATCH (r:MedicalRecord {recordId: ${form.id}})\nSET r.visitDate = date('${form.visitDate}'),\n    r.diagnosis = '${form.diagnosis}',\n    r.treatment = '${form.treatment}'\nRETURN r`);
+    }
+    setModal(null);
+  };
+
+  const del = (id) => {
+    if (!window.confirm("Delete this medical record?")) return;
+    setRecords(prev => prev.filter(r => r.id !== id));
+    setLastQuery(`MATCH (r:MedicalRecord {recordId: ${id}})\nDETACH DELETE r`);
+  };
+
   return (
     <div>
-      <SectionHeader title="Medical Records" />
+      <SectionHeader title="Medical Records" onAdd={openAdd} />
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {records.map(r => {
           const p = patients.find(x => x.id === r.patientId);
           const d = doctors.find(x => x.id === r.doctorId);
           return (
             <div key={r.id} style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>Record #{r.id} — {r.visitDate}</div>
-                <div style={{ fontSize: 13, color: "#64748B" }}>Dr. {d ? `${d.firstName} ${d.lastName}` : "—"}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn onClick={() => openEdit(r)} variant="ghost" style={{ padding: "4px 10px", fontSize: 11 }}>Edit</Btn>
+                  <Btn onClick={() => del(r.id)} variant="danger" style={{ padding: "4px 10px", fontSize: 11 }}>Delete</Btn>
+                </div>
               </div>
-              <div style={{ fontSize: 13, color: "#64748B", marginBottom: 6 }}>Patient: <strong>{p ? `${p.firstName} ${p.lastName}` : "—"}</strong></div>
+              <div style={{ fontSize: 13, color: "#64748B", marginBottom: 6 }}>Patient: <strong>{p ? `${p.firstName} ${p.lastName}` : "—"}</strong> · Dr. {d ? `${d.firstName} ${d.lastName}` : "—"}</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div style={{ background: "#F0FDF4", borderRadius: 8, padding: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#16A34A", marginBottom: 4 }}>DIAGNOSIS</div>
@@ -450,7 +481,30 @@ function Records({ records, patients, doctors }) {
           );
         })}
       </div>
-      <CypherBox query={`MATCH (p:Patient)-[:HAS_RECORD]->(r:MedicalRecord)<-[:DIAGNOSED_IN]-(d:Doctor)\nRETURN p.firstName + ' ' + p.lastName AS patient,\n       r.visitDate, r.diagnosis, r.treatment,\n       d.firstName + ' ' + d.lastName AS doctor\nORDER BY r.visitDate DESC`} />
+      <CypherBox query={lastQuery || `MATCH (p:Patient)-[:HAS_RECORD]->(r:MedicalRecord)<-[:DIAGNOSED_IN]-(d:Doctor)\nRETURN p.firstName + ' ' + p.lastName AS patient,\n       r.visitDate, r.diagnosis, r.treatment,\n       d.firstName + ' ' + d.lastName AS doctor\nORDER BY r.visitDate DESC`} />
+      {modal && (
+        <Modal title={modal === "add" ? "Add Medical Record" : "Edit Medical Record"} onClose={() => setModal(null)}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div><label style={labelStyle}>Patient</label>
+              <select style={fieldStyle} value={form.patientId} onChange={e=>setForm(f=>({...f,patientId:Number(e.target.value)})}>
+                {patients.map(p=><option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
+              </select>
+            </div>
+            <div><label style={labelStyle}>Doctor</label>
+              <select style={fieldStyle} value={form.doctorId} onChange={e=>setForm(f=>({...f,doctorId:Number(e.target.value)})}>
+                {doctors.map(d=><option key={d.id} value={d.id}>Dr. {d.lastName} ({d.specialty})</option>)}
+              </select>
+            </div>
+            <div><label style={labelStyle}>Visit Date</label><input type="date" style={fieldStyle} value={form.visitDate||""} onChange={e=>setForm(f=>({...f,visitDate:e.target.value}))} /></div>
+            <div style={{ gridColumn:"span 2" }}><label style={labelStyle}>Diagnosis</label><input type="text" style={fieldStyle} value={form.diagnosis||""} onChange={e=>setForm(f=>({...f,diagnosis:e.target.value}))} /></div>
+            <div style={{ gridColumn:"span 2" }}><label style={labelStyle}>Treatment</label><input type="text" style={fieldStyle} value={form.treatment||""} onChange={e=>setForm(f=>({...f,treatment:e.target.value}))} /></div>
+          </div>
+          <div style={{ display:"flex", gap:10, marginTop:20, justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={()=>setModal(null)}>Cancel</Btn>
+            <Btn onClick={save}>{modal==="add"?"Add Record":"Save Changes"}</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -462,11 +516,24 @@ function Medicines({ medicines, setMedicines }) {
   const [lastQuery, setLastQuery] = useState('');
 
   const openAdd = () => { setForm({ name:"", description:"", price:"", stock:"" }); setModal("add"); };
+  const openEdit = (m) => { setForm({ ...m }); setModal("edit"); };
+
   const save = () => {
-    const newM = { ...form, id: Date.now(), price: parseFloat(form.price), stock: parseInt(form.stock) };
-    setMedicines(prev => [...prev, newM]);
-    setLastQuery(`CREATE (m:Medicine {\n  medicineId: ${newM.id},\n  medName: '${form.name}',\n  description: '${form.description}',\n  price: ${form.price},\n  stockQty: ${form.stock}\n})\nRETURN m`);
+    if (modal === "add") {
+      const newM = { ...form, id: Date.now(), price: parseFloat(form.price), stock: parseInt(form.stock) };
+      setMedicines(prev => [...prev, newM]);
+      setLastQuery(`CREATE (m:Medicine {\n  medicineId: ${newM.id},\n  medName: '${form.name}',\n  description: '${form.description}',\n  price: ${form.price},\n  stockQty: ${form.stock}\n})\nRETURN m`);
+    } else {
+      setMedicines(prev => prev.map(m => m.id === form.id ? { ...m, name: form.name, description: form.description, price: parseFloat(form.price), stock: parseInt(form.stock) } : m));
+      setLastQuery(`MATCH (m:Medicine {medicineId: ${form.id}})\nSET m.medName = '${form.name}',\n    m.description = '${form.description}',\n    m.price = ${form.price},\n    m.stockQty = ${form.stock}\nRETURN m`);
+    }
     setModal(null);
+  };
+
+  const del = (id, name) => {
+    if (!window.confirm(`Delete medicine ${name}?`)) return;
+    setMedicines(prev => prev.filter(m => m.id !== id));
+    setLastQuery(`MATCH (m:Medicine {medicineId: ${id}})\nDETACH DELETE m`);
   };
 
   return (
@@ -475,7 +542,13 @@ function Medicines({ medicines, setMedicines }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px,1fr))", gap: 16 }}>
         {medicines.map(m => (
           <div key={m.id} style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #E2E8F0" }}>
-            <div style={{ fontSize: 24, marginBottom: 10 }}>💊</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div style={{ fontSize: 24 }}>💊</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <Btn onClick={() => openEdit(m)} variant="ghost" style={{ padding: "4px 10px", fontSize: 11 }}>Edit</Btn>
+                <Btn onClick={() => del(m.id, m.name)} variant="danger" style={{ padding: "4px 10px", fontSize: 11 }}>Delete</Btn>
+              </div>
+            </div>
             <div style={{ fontWeight: 700, fontSize: 15, color: DARK }}>{m.name}</div>
             <div style={{ fontSize: 13, color: "#64748B", marginTop: 4, minHeight: 36 }}>{m.description}</div>
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
@@ -493,7 +566,7 @@ function Medicines({ medicines, setMedicines }) {
       </div>
       <CypherBox query={lastQuery || `MATCH (m:Medicine)\nRETURN m.medName, m.description, m.price, m.stockQty\nORDER BY m.medName`} />
       {modal && (
-        <Modal title="Add Medicine" onClose={() => setModal(null)}>
+        <Modal title={modal === "add" ? "Add Medicine" : "Edit Medicine"} onClose={() => setModal(null)}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             {[["name","Medicine Name"],["description","Description"],["price","Price (฿)"],["stock","Stock Qty"]].map(([k,l])=>(
               <div key={k} style={k==="description"?{gridColumn:"span 2"}:{}}>
@@ -504,7 +577,7 @@ function Medicines({ medicines, setMedicines }) {
           </div>
           <div style={{ display:"flex", gap:10, marginTop:20, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setModal(null)}>Cancel</Btn>
-            <Btn onClick={save}>Add Medicine</Btn>
+            <Btn onClick={save}>{modal==="add"?"Add Medicine":"Save Changes"}</Btn>
           </div>
         </Modal>
       )}
@@ -512,62 +585,6 @@ function Medicines({ medicines, setMedicines }) {
   );
 }
 
-// ─── Cypher Explorer ──────────────────────────────────────────────────────────
-const CYPHER_EXAMPLES = [
-  { label: "Create Patient", query: `CREATE (p:Patient {\n  patientId: 4,\n  firstName: 'Malee',\n  lastName: 'Wongchai',\n  dob: date('1998-06-15'),\n  phone: '0856789012',\n  allergic: 'None'\n})\nRETURN p` },
-  { label: "Read All Patients", query: `MATCH (p:Patient)\nRETURN p.patientId, p.firstName, p.lastName,\n       p.dob, p.phone, p.allergic\nORDER BY p.lastName` },
-  { label: "Patient Appointments", query: `MATCH (p:Patient {patientId: 1})\n      -[:HAS_APPOINTMENT]->(a:Appointment)\n      -[:ATTENDED_BY]->(d:Doctor)\nRETURN p.firstName, a.appntDate,\n       a.appntTime, a.status,\n       d.firstName + ' ' + d.lastName AS doctor` },
-  { label: "Update Patient Phone", query: `MATCH (p:Patient {patientId: 1})\nSET p.phone = '0899991111'\nRETURN p.firstName, p.phone` },
-  { label: "Delete Cancelled Appts", query: `MATCH (a:Appointment {status: 'Cancelled'})\nDETACH DELETE a` },
-  { label: "Doctor Work Summary", query: `MATCH (d:Doctor)-[:DIAGNOSED_IN]->(r:MedicalRecord)\nRETURN d.firstName + ' ' + d.lastName AS doctor,\n       d.specialty,\n       COUNT(r) AS totalRecords\nORDER BY totalRecords DESC` },
-  { label: "Low Stock Medicines", query: `MATCH (m:Medicine)\nWHERE m.stockQty < 100\nRETURN m.medName, m.stockQty\nORDER BY m.stockQty ASC` },
-  { label: "Graph Traversal", query: `MATCH path = (p:Patient)\n      -[:HAS_APPOINTMENT]->(a)\n      -[:ATTENDED_BY]->(d:Doctor)\n      -[:DIAGNOSED_IN]->(r:MedicalRecord)\nRETURN path LIMIT 5` },
-];
-
-function CypherExplorer() {
-  const [selected, setSelected] = useState(0);
-  return (
-    <div>
-      <SectionHeader title="Cypher Query Explorer" />
-      <p style={{ color: "#64748B", fontSize: 14, marginTop: -10, marginBottom: 20 }}>
-        Explore Neo4j Cypher queries for the clinic database. These queries run against the graph database on Docker.
-      </p>
-      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 20 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {CYPHER_EXAMPLES.map((ex, i) => (
-            <button key={i} onClick={() => setSelected(i)} style={{ textAlign: "left", padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: selected===i?700:500, fontSize: 13, background: selected===i ? TEAL : "#F1F5F9", color: selected===i ? "#fff" : "#334155", transition: "all .15s" }}>{ex.label}</button>
-          ))}
-        </div>
-        <div>
-          <div style={{ background: "#0F172A", borderRadius: 14, padding: 24, minHeight: 300 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#0D9488", letterSpacing: 1 }}>CYPHER — {CYPHER_EXAMPLES[selected].label.toUpperCase()}</div>
-              <div style={{ fontSize: 11, color: "#475569" }}>Neo4j 5.x</div>
-            </div>
-            <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 14, color: "#7DD3FC", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
-              {CYPHER_EXAMPLES[selected].query}
-            </pre>
-          </div>
-          <div style={{ marginTop: 16, background: "#F8FAFC", borderRadius: 12, padding: 16, border: "1px solid #E2E8F0" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#64748B", marginBottom: 8 }}>DOCKER SETUP COMMANDS</div>
-            <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 12, color: "#334155", lineHeight: 1.8 }}>
-{`# Pull and run Neo4j container
-docker pull neo4j:latest
-docker run -d \\
-  --name neo4j-clinic \\
-  -p 7474:7474 -p 7687:7687 \\
-  -e NEO4J_AUTH=neo4j/clinic123 \\
-  neo4j:latest
-
-# Access Neo4j Browser
-open http://localhost:7474`}
-            </pre>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function ClinicApp() {
@@ -576,9 +593,9 @@ export default function ClinicApp() {
   const [doctors] = useState(initDoctors);
   const [appointments, setAppointments] = useState(initAppointments);
   const [medicines, setMedicines] = useState(initMedicines);
-  const [records] = useState(initRecords);
+  const [records, setRecords] = useState(initRecords);
 
-  const pageIcons = { dashboard:"⬛", patients:"👤", doctors:"🩺", appointments:"📅", records:"📋", medicines:"💊", cypher:"🔍" };
+  const pageIcons = { dashboard:"⬛", patients:"👤", doctors:"🩺", appointments:"📅", records:"📋", medicines:"💊" };
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'Segoe UI', system-ui, sans-serif", background: "#F1F5F9" }}>
@@ -621,9 +638,8 @@ export default function ClinicApp() {
         {page === "patients" && <Patients patients={patients} setPatients={setPatients} />}
         {page === "doctors" && <Doctors doctors={doctors} />}
         {page === "appointments" && <Appointments appointments={appointments} setAppointments={setAppointments} patients={patients} doctors={doctors} />}
-        {page === "records" && <Records records={records} patients={patients} doctors={doctors} />}
+        {page === "records" && <Records records={records} setRecords={setRecords} patients={patients} doctors={doctors} />}
         {page === "medicines" && <Medicines medicines={medicines} setMedicines={setMedicines} />}
-        {page === "cypher" && <CypherExplorer />}
       </div>
     </div>
   );
