@@ -145,35 +145,6 @@ function Dashboard({ patients, doctors, appointments, medicines, records }) {
             );
           })}
         </div>
-        <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #E2E8F0" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 700, color: DARK }}>Neo4j Graph Model</h3>
-          <svg viewBox="0 0 340 220" style={{ width: "100%", height: "auto" }}>
-            {[
-              { cx: 170, cy: 50, label: "Patient", fill: "#0D9488" },
-              { cx: 60, cy: 150, label: "Doctor", fill: "#7C3AED" },
-              { cx: 170, cy: 170, label: "Appointment", fill: "#EA580C" },
-              { cx: 280, cy: 150, label: "MedRecord", fill: "#0369A1" },
-              { cx: 280, cy: 60, label: "Medicine", fill: "#16A34A" },
-            ].map((n, i) => (
-              <g key={i}>
-                <circle cx={n.cx} cy={n.cy} r={28} fill={n.fill} fillOpacity={0.15} stroke={n.fill} strokeWidth={2} />
-                <text x={n.cx} y={n.cy + 4} textAnchor="middle" fill={n.fill} fontSize={9} fontWeight="bold">{n.label}</text>
-              </g>
-            ))}
-            {[
-              [170,78,170,142,"HAS_APPT"],
-              [88,142,142,160,"ATTENDS"],
-              [198,160,252,158,"HAS_RECORD"],
-              [170,78,254,78,"PRESCRIBED"],
-            ].map(([x1,y1,x2,y2,lbl],i) => (
-              <g key={i}>
-                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#CBD5E1" strokeWidth={1.5} markerEnd="url(#arrow)" />
-                <text x={(x1+x2)/2} y={(y1+y2)/2 - 4} textAnchor="middle" fill="#64748B" fontSize={8}>{lbl}</text>
-              </g>
-            ))}
-            <defs><marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#CBD5E1"/></marker></defs>
-          </svg>
-        </div>
       </div>
     </div>
   );
@@ -486,12 +457,12 @@ function Records({ records, setRecords, patients, doctors }) {
         <Modal title={modal === "add" ? "Add Medical Record" : "Edit Medical Record"} onClose={() => setModal(null)}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <div><label style={labelStyle}>Patient</label>
-              <select style={fieldStyle} value={form.patientId} onChange={e=>setForm(f=>({...f,patientId:Number(e.target.value)})}>
+              <select style={fieldStyle} value={form.patientId} onChange={e=>setForm(f=>({...f,patientId:+e.target.value}))}>
                 {patients.map(p=><option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
               </select>
             </div>
             <div><label style={labelStyle}>Doctor</label>
-              <select style={fieldStyle} value={form.doctorId} onChange={e=>setForm(f=>({...f,doctorId:Number(e.target.value)})}>
+              <select style={fieldStyle} value={form.doctorId} onChange={e=>setForm(f=>({...f,doctorId:+e.target.value}))}>
                 {doctors.map(d=><option key={d.id} value={d.id}>Dr. {d.lastName} ({d.specialty})</option>)}
               </select>
             </div>
