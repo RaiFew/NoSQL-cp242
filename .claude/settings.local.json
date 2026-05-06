@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"D:\\\\NoSQL\" -Recurse)",
+      "Bash(Select-Object FullName)",
+      "Bash(New-Item *)",
+      "PowerShell(New-Item *)",
+      "Bash(2_)",
+      "Bash(3_)",
+      "Bash(4_)",
+      "Bash(5_\")",
+      "PowerShell(Get-ChildItem \"D:\\\\NoSQL\" | Where-Object {$_.Name -match \"^[1-5]_\"} | Select-Object Name, Length, LastWriteTime)"
+    ]
+  }
+}
