@@ -1,4 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import neo4j from "neo4j-driver";
+
+function getDriver() {
+  if (!window.__neo4jDriver) {
+    window.__neo4jDriver = neo4j.driver(
+      "bolt://localhost:7687",
+      neo4j.auth.basic("neo4j", "clinic123")
+    );
+  }
+  return window.__neo4jDriver;
+}
 
 const TEAL = "#0D9488";
 const DARK = "#0F172A";
@@ -160,22 +171,48 @@ function Patients({ patients, setPatients }) {
   const openAdd = () => { setForm({ firstName:"", lastName:"", dob:"", phone:"", allergic:"" }); setModal("add"); };
   const openEdit = (p) => { setForm({ ...p }); setModal("edit"); };
 
-  const save = () => {
-    if (modal === "add") {
-      const newP = { ...form, id: Date.now() };
-      setPatients(prev => [...prev, newP]);
-      setLastQuery(`CREATE (p:Patient {\n  patientId: ${newP.id},\n  firstName: '${form.firstName}',\n  lastName: '${form.lastName}',\n  dob: date('${form.dob}'),\n  phone: '${form.phone}',\n  allergic: '${form.allergic || "None"}'\n})\nRETURN p`);
-    } else {
-      setPatients(prev => prev.map(p => p.id === form.id ? form : p));
-      setLastQuery(`MATCH (p:Patient {patientId: ${form.id}})\nSET p.firstName = '${form.firstName}',\n    p.lastName = '${form.lastName}',\n    p.phone = '${form.phone}',\n    p.allergic = '${form.allergic}'\nRETURN p`);
+  const save = async () => {
+    const session = getDriver().session();
+    try {
+      if (modal === "add") {
+        const newId = Date.now();
+        const newP = { ...form, id: newId };
+        await session.run(
+          'CREATE (p:Patient {patientId: $id, firstName: $firstName, lastName: $lastName, dob: $dob, phone: $phone, allergic: $allergic})',
+          { id: newId, firstName: form.firstName, lastName: form.lastName, dob: form.dob, phone: form.phone, allergic: form.allergic || "None" }
+        );
+        setPatients(prev => [...prev, newP]);
+        setLastQuery(`CREATE (p:Patient {patientId: ${newId}, firstName: '${form.firstName}', lastName: '${form.lastName}', dob: '${form.dob}', phone: '${form.phone}', allergic: '${form.allergic || "None"}'})`);
+      } else {
+        await session.run(
+          'MATCH (p:Patient {patientId: $id}) SET p.firstName = $firstName, p.lastName = $lastName, p.dob = $dob, p.phone = $phone, p.allergic = $allergic',
+          { id: form.id, firstName: form.firstName, lastName: form.lastName, dob: form.dob, phone: form.phone, allergic: form.allergic }
+        );
+        setPatients(prev => prev.map(p => p.id === form.id ? form : p));
+        setLastQuery(`MATCH (p:Patient {patientId: ${form.id}}) SET p.firstName = '${form.firstName}', p.lastName = '${form.lastName}', p.phone = '${form.phone}', p.allergic = '${form.allergic}'`);
+      }
+      setModal(null);
+    } catch (err) {
+      console.error('Error saving patient:', err);
+      alert('Error saving patient');
+    } finally {
+      session.close();
     }
-    setModal(null);
   };
 
-  const del = (id, name) => {
+  const del = async (id, name) => {
     if (!window.confirm(`Delete patient ${name}?`)) return;
-    setPatients(prev => prev.filter(p => p.id !== id));
-    setLastQuery(`MATCH (p:Patient {patientId: ${id}})\nDETACH DELETE p`);
+    const session = getDriver().session();
+    try {
+      await session.run('MATCH (p:Patient {patientId: $id}) DETACH DELETE p', { id });
+      setPatients(prev => prev.filter(p => p.id !== id));
+      setLastQuery(`MATCH (p:Patient {patientId: ${id}}) DETACH DELETE p`);
+    } catch (err) {
+      console.error('Error deleting patient:', err);
+      alert('Error deleting patient');
+    } finally {
+      session.close();
+    }
   };
 
   const viewAll = () => setLastQuery(`MATCH (p:Patient)\nRETURN p.patientId, p.firstName, p.lastName,\n       p.dob, p.phone, p.allergic\nORDER BY p.lastName`);
@@ -313,23 +350,53 @@ function Appointments({ appointments, setAppointments, patients, doctors }) {
   const openAdd = () => { setForm({ date:"", time:"", status:"Scheduled", patientId: patients[0]?.id||"", doctorId: doctors[0]?.id||"" }); setModal("add"); };
   const openEdit = a => { setForm({ ...a }); setModal("edit"); };
 
-  const save = () => {
+  const save = async () => {
     const pid = Number(form.patientId), did = Number(form.doctorId);
-    if (modal === "add") {
-      const newA = { ...form, id: Date.now(), patientId: pid, doctorId: did };
-      setAppointments(prev => [...prev, newA]);
-      setLastQuery(`MATCH (p:Patient {patientId: ${pid}}), (d:Doctor {doctorId: ${did}})\nCREATE (a:Appointment {\n  appointmentId: ${newA.id},\n  appntDate: date('${form.date}'),\n  appntTime: time('${form.time}'),\n  status: '${form.status}'\n})\nCREATE (p)-[:HAS_APPOINTMENT]->(a)\nCREATE (a)-[:ATTENDED_BY]->(d)\nRETURN a`);
-    } else {
-      setAppointments(prev => prev.map(a => a.id === form.id ? { ...form, patientId: pid, doctorId: did } : a));
-      setLastQuery(`MATCH (a:Appointment {appointmentId: ${form.id}})\nSET a.appntDate = date('${form.date}'),\n    a.appntTime = time('${form.time}'),\n    a.status = '${form.status}'\nRETURN a`);
+    const session = getDriver().session();
+    try {
+      if (modal === "add") {
+        const newId = Date.now();
+        const newA = { ...form, id: newId, patientId: pid, doctorId: did };
+        await session.run(
+          `MATCH (p:Patient {patientId: $pid}), (d:Doctor {doctorId: $did})
+           CREATE (a:Appointment {appointmentId: $id, date: $date, time: $time, status: $status})
+           CREATE (p)-[:HAS_APPOINTMENT]->(a)
+           CREATE (a)-[:ATTENDED_BY]->(d)
+           RETURN a`,
+          { pid, did, id: newId, date: form.date, time: form.time, status: form.status }
+        );
+        setAppointments(prev => [...prev, newA]);
+        setLastQuery(`MATCH (p:Patient {patientId: ${pid}}), (d:Doctor {doctorId: ${did}}) CREATE (a:Appointment {appointmentId: ${newId}, date: '${form.date}', time: '${form.time}', status: '${form.status}'}) CREATE (p)-[:HAS_APPOINTMENT]->(a) CREATE (a)-[:ATTENDED_BY]->(d) RETURN a`);
+      } else {
+        await session.run(
+          'MATCH (a:Appointment {appointmentId: $id}) SET a.date = $date, a.time = $time, a.status = $status',
+          { id: form.id, date: form.date, time: form.time, status: form.status }
+        );
+        setAppointments(prev => prev.map(a => a.id === form.id ? { ...form, patientId: pid, doctorId: did } : a));
+        setLastQuery(`MATCH (a:Appointment {appointmentId: ${form.id}}) SET a.date = '${form.date}', a.time = '${form.time}', a.status = '${form.status}'`);
+      }
+      setModal(null);
+    } catch (err) {
+      console.error('Error saving appointment:', err);
+      alert('Error saving appointment');
+    } finally {
+      session.close();
     }
-    setModal(null);
   };
 
-  const del = (id) => {
+  const del = async (id) => {
     if (!window.confirm("Delete this appointment?")) return;
-    setAppointments(prev => prev.filter(a => a.id !== id));
-    setLastQuery(`MATCH (a:Appointment {appointmentId: ${id}})\nDETACH DELETE a`);
+    const session = getDriver().session();
+    try {
+      await session.run('MATCH (a:Appointment {appointmentId: $id}) DETACH DELETE a', { id });
+      setAppointments(prev => prev.filter(a => a.id !== id));
+      setLastQuery(`MATCH (a:Appointment {appointmentId: ${id}}) DETACH DELETE a`);
+    } catch (err) {
+      console.error('Error deleting appointment:', err);
+      alert('Error deleting appointment');
+    } finally {
+      session.close();
+    }
   };
 
   return (
@@ -402,23 +469,53 @@ function Records({ records, setRecords, patients, doctors }) {
   };
   const openEdit = (r) => { setForm({ ...r }); setModal("edit"); };
 
-  const save = () => {
+  const save = async () => {
     const pid = Number(form.patientId), did = Number(form.doctorId);
-    if (modal === "add") {
-      const newR = { ...form, id: Date.now(), patientId: pid, doctorId: did };
-      setRecords(prev => [...prev, newR]);
-      setLastQuery(`MATCH (p:Patient {patientId: ${pid}}), (d:Doctor {doctorId: ${did}})\nCREATE (r:MedicalRecord {\n  recordId: ${newR.id},\n  visitDate: date('${form.visitDate}'),\n  diagnosis: '${form.diagnosis}',\n  treatment: '${form.treatment}'\n})\nCREATE (p)-[:HAS_RECORD]->(r)\nCREATE (d)-[:DIAGNOSED_IN]->(r)\nRETURN r`);
-    } else {
-      setRecords(prev => prev.map(r => r.id === form.id ? { ...form, patientId: pid, doctorId: did } : r));
-      setLastQuery(`MATCH (r:MedicalRecord {recordId: ${form.id}})\nSET r.visitDate = date('${form.visitDate}'),\n    r.diagnosis = '${form.diagnosis}',\n    r.treatment = '${form.treatment}'\nRETURN r`);
+    const session = getDriver().session();
+    try {
+      if (modal === "add") {
+        const newId = Date.now();
+        const newR = { ...form, id: newId, patientId: pid, doctorId: did };
+        await session.run(
+          `MATCH (p:Patient {patientId: $pid}), (d:Doctor {doctorId: $did})
+           CREATE (r:MedicalRecord {recordId: $id, visitDate: $visitDate, diagnosis: $diagnosis, treatment: $treatment})
+           CREATE (p)-[:HAS_RECORD]->(r)
+           CREATE (d)-[:TREATS]->(r)
+           RETURN r`,
+          { pid, did, id: newId, visitDate: form.visitDate, diagnosis: form.diagnosis, treatment: form.treatment }
+        );
+        setRecords(prev => [...prev, newR]);
+        setLastQuery(`MATCH (p:Patient {patientId: ${pid}}), (d:Doctor {doctorId: ${did}}) CREATE (r:MedicalRecord {recordId: ${newId}, visitDate: '${form.visitDate}', diagnosis: '${form.diagnosis}', treatment: '${form.treatment}'}) CREATE (p)-[:HAS_RECORD]->(r) CREATE (d)-[:TREATS]->(r) RETURN r`);
+      } else {
+        await session.run(
+          'MATCH (r:MedicalRecord {recordId: $id}) SET r.visitDate = $visitDate, r.diagnosis = $diagnosis, r.treatment = $treatment',
+          { id: form.id, visitDate: form.visitDate, diagnosis: form.diagnosis, treatment: form.treatment }
+        );
+        setRecords(prev => prev.map(r => r.id === form.id ? { ...form, patientId: pid, doctorId: did } : r));
+        setLastQuery(`MATCH (r:MedicalRecord {recordId: ${form.id}}) SET r.visitDate = '${form.visitDate}', r.diagnosis = '${form.diagnosis}', r.treatment = '${form.treatment}'`);
+      }
+      setModal(null);
+    } catch (err) {
+      console.error('Error saving medical record:', err);
+      alert('Error saving medical record');
+    } finally {
+      session.close();
     }
-    setModal(null);
   };
 
-  const del = (id) => {
+  const del = async (id) => {
     if (!window.confirm("Delete this medical record?")) return;
-    setRecords(prev => prev.filter(r => r.id !== id));
-    setLastQuery(`MATCH (r:MedicalRecord {recordId: ${id}})\nDETACH DELETE r`);
+    const session = getDriver().session();
+    try {
+      await session.run('MATCH (r:MedicalRecord {recordId: $id}) DETACH DELETE r', { id });
+      setRecords(prev => prev.filter(r => r.id !== id));
+      setLastQuery(`MATCH (r:MedicalRecord {recordId: ${id}}) DETACH DELETE r`);
+    } catch (err) {
+      console.error('Error deleting medical record:', err);
+      alert('Error deleting medical record');
+    } finally {
+      session.close();
+    }
   };
 
   return (
@@ -489,22 +586,48 @@ function Medicines({ medicines, setMedicines }) {
   const openAdd = () => { setForm({ name:"", description:"", price:"", stock:"" }); setModal("add"); };
   const openEdit = (m) => { setForm({ ...m }); setModal("edit"); };
 
-  const save = () => {
-    if (modal === "add") {
-      const newM = { ...form, id: Date.now(), price: parseFloat(form.price), stock: parseInt(form.stock) };
-      setMedicines(prev => [...prev, newM]);
-      setLastQuery(`CREATE (m:Medicine {\n  medicineId: ${newM.id},\n  medName: '${form.name}',\n  description: '${form.description}',\n  price: ${form.price},\n  stockQty: ${form.stock}\n})\nRETURN m`);
-    } else {
-      setMedicines(prev => prev.map(m => m.id === form.id ? { ...m, name: form.name, description: form.description, price: parseFloat(form.price), stock: parseInt(form.stock) } : m));
-      setLastQuery(`MATCH (m:Medicine {medicineId: ${form.id}})\nSET m.medName = '${form.name}',\n    m.description = '${form.description}',\n    m.price = ${form.price},\n    m.stockQty = ${form.stock}\nRETURN m`);
+  const save = async () => {
+    const session = getDriver().session();
+    try {
+      if (modal === "add") {
+        const newId = Date.now();
+        const newM = { ...form, id: newId, price: parseFloat(form.price), stock: parseInt(form.stock) };
+        await session.run(
+          'CREATE (m:Medicine {medicineId: $id, name: $name, description: $description, price: $price, stock: $stock})',
+          { id: newId, name: form.name, description: form.description, price: parseFloat(form.price), stock: parseInt(form.stock) }
+        );
+        setMedicines(prev => [...prev, newM]);
+        setLastQuery(`CREATE (m:Medicine {medicineId: ${newId}, name: '${form.name}', description: '${form.description}', price: ${form.price}, stock: ${form.stock}}) RETURN m`);
+      } else {
+        await session.run(
+          'MATCH (m:Medicine {medicineId: $id}) SET m.name = $name, m.description = $description, m.price = $price, m.stock = $stock',
+          { id: form.id, name: form.name, description: form.description, price: parseFloat(form.price), stock: parseInt(form.stock) }
+        );
+        setMedicines(prev => prev.map(m => m.id === form.id ? { ...m, name: form.name, description: form.description, price: parseFloat(form.price), stock: parseInt(form.stock) } : m));
+        setLastQuery(`MATCH (m:Medicine {medicineId: ${form.id}}) SET m.name = '${form.name}', m.description = '${form.description}', m.price = ${form.price}, m.stock = ${form.stock} RETURN m`);
+      }
+      setModal(null);
+    } catch (err) {
+      console.error('Error saving medicine:', err);
+      alert('Error saving medicine');
+    } finally {
+      session.close();
     }
-    setModal(null);
   };
 
-  const del = (id, name) => {
+  const del = async (id, name) => {
     if (!window.confirm(`Delete medicine ${name}?`)) return;
-    setMedicines(prev => prev.filter(m => m.id !== id));
-    setLastQuery(`MATCH (m:Medicine {medicineId: ${id}})\nDETACH DELETE m`);
+    const session = getDriver().session();
+    try {
+      await session.run('MATCH (m:Medicine {medicineId: $id}) DETACH DELETE m', { id });
+      setMedicines(prev => prev.filter(m => m.id !== id));
+      setLastQuery(`MATCH (m:Medicine {medicineId: ${id}}) DETACH DELETE m`);
+    } catch (err) {
+      console.error('Error deleting medicine:', err);
+      alert('Error deleting medicine');
+    } finally {
+      session.close();
+    }
   };
 
   return (
@@ -560,11 +683,108 @@ function Medicines({ medicines, setMedicines }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function ClinicApp() {
   const [page, setPage] = useState("dashboard");
-  const [patients, setPatients] = useState(initPatients);
-  const [doctors] = useState(initDoctors);
-  const [appointments, setAppointments] = useState(initAppointments);
-  const [medicines, setMedicines] = useState(initMedicines);
-  const [records, setRecords] = useState(initRecords);
+  const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [medicines, setMedicines] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const session = getDriver().session();
+    async function loadData() {
+      try {
+        // Load Patients
+        const pRes = await session.run('MATCH (p:Patient) RETURN p');
+        const patientsData = pRes.records.map(r => {
+          const p = r.get('p').properties;
+          return {
+            id: parseInt(p.patientId || p.id),
+            firstName: p.firstName,
+            lastName: p.lastName,
+            dob: p.dob,
+            phone: p.phone,
+            allergic: p.allergic
+          };
+        });
+        setPatients(patientsData.length > 0 ? patientsData : initPatients);
+
+        // Load Doctors
+        const dRes = await session.run('MATCH (d:Doctor) RETURN d');
+        const doctorsData = dRes.records.map(r => {
+          const d = r.get('d').properties;
+          return {
+            id: parseInt(d.doctorId || d.id),
+            firstName: d.firstName,
+            lastName: d.lastName,
+            specialty: d.specialty,
+            phone: d.phone
+          };
+        });
+        setDoctors(doctorsData.length > 0 ? doctorsData : initDoctors);
+
+        // Load Appointments with relationships
+        const aRes = await session.run(
+          'MATCH (p:Patient)-[:HAS_APPOINTMENT]->(a:Appointment)-[:ATTENDED_BY]->(d:Doctor) RETURN a, p.patientId as pid, d.doctorId as did'
+        );
+        const appointmentsData = aRes.records.map(r => {
+          const a = r.get('a').properties;
+          return {
+            id: parseInt(a.appointmentId || a.id),
+            date: a.date,
+            time: a.time,
+            status: a.status,
+            patientId: parseInt(r.get('pid')),
+            doctorId: parseInt(r.get('did'))
+          };
+        });
+        setAppointments(appointmentsData.length > 0 ? appointmentsData : initAppointments);
+
+        // Load Medicines
+        const mRes = await session.run('MATCH (m:Medicine) RETURN m');
+        const medicinesData = mRes.records.map(r => {
+          const m = r.get('m').properties;
+          return {
+            id: parseInt(m.medicineId || m.id),
+            name: m.name || m.medName,
+            description: m.description,
+            price: parseFloat(m.price),
+            stock: parseInt(m.stock || m.stockQty)
+          };
+        });
+        setMedicines(medicinesData.length > 0 ? medicinesData : initMedicines);
+
+        // Load Medical Records with relationships
+        const rRes = await session.run(
+          'MATCH (p:Patient)-[:HAS_RECORD]->(r:MedicalRecord)<-[:TREATS]-(d:Doctor) RETURN r, p.patientId as pid, d.doctorId as did'
+        );
+        const recordsData = rRes.records.map(r => {
+          const rec = r.get('r').properties;
+          return {
+            id: parseInt(rec.recordId || rec.id),
+            visitDate: rec.visitDate,
+            diagnosis: rec.diagnosis,
+            treatment: rec.treatment,
+            patientId: parseInt(r.get('pid')),
+            doctorId: parseInt(r.get('did'))
+          };
+        });
+        setRecords(recordsData.length > 0 ? recordsData : initRecords);
+
+      } catch (err) {
+        console.error('Error loading data from Neo4j, using mock data:', err);
+        setPatients(initPatients);
+        setDoctors(initDoctors);
+        setAppointments(initAppointments);
+        setMedicines(initMedicines);
+        setRecords(initRecords);
+      } finally {
+        setLoading(false);
+        session.close();
+      }
+    }
+    loadData();
+  }, []);
 
   const pageIcons = { dashboard:"⬛", patients:"👤", doctors:"🩺", appointments:"📅", records:"📋", medicines:"💊" };
 

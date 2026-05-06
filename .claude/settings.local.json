@@ -10,7 +10,8 @@
       "Bash(4_)",
       "Bash(5_\")",
       "PowerShell(Get-ChildItem \"D:\\\\NoSQL\" | Where-Object {$_.Name -match \"^[1-5]_\"} | Select-Object Name, Length, LastWriteTime)",
-      "Bash(powershell *)"
+      "Bash(powershell *)",
+      "Bash(npm install *)"
     ]
   }
 }
