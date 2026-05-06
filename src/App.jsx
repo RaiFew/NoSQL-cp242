@@ -5,9 +5,21 @@ const DARK = "#0F172A";
 const SIDEBAR_W = 220;
 
 const initPatients = [
-  { id: 1, firstName: "Somchai", lastName: "Jaidee", dob: "1985-03-14", phone: "0812345678", allergic: "Penicillin" },
-  { id: 2, firstName: "Nattaya", lastName: "Srisuk", dob: "1992-07-22", phone: "0898765432", allergic: "None" },
-  { id: 3, firstName: "Prasert", lastName: "Moonkham", dob: "1975-11-05", phone: "0845678901", allergic: "Aspirin" },
+  { id: 1, firstName: "Anan", lastName: "Chaiyadej", dob: "1988-01-15", phone: "0811111111", allergic: "Penicillin" },
+  { id: 2, firstName: "Mali", lastName: "Srisuwan", dob: "1995-05-22", phone: "0822222222", allergic: "None" },
+  { id: 3, firstName: "Krit", lastName: "Pongpat", dob: "1979-09-10", phone: "0833333333", allergic: "Aspirin" },
+  { id: 4, firstName: "Suda", lastName: "Thongchai", dob: "1992-12-03", phone: "0844444444", allergic: "None" },
+  { id: 5, firstName: "Napat", lastName: "Narongchai", dob: "1985-07-18", phone: "0855555555", allergic: "Sulfa" },
+  { id: 6, firstName: "Lalita", lastName: "Wongchai", dob: "1998-03-25", phone: "0866666666", allergic: "None" },
+  { id: 7, firstName: "Chaiwat", lastName: "Moonkham", dob: "1970-11-30", phone: "0877777777", allergic: "Ibuprofen" },
+  { id: 8, firstName: "Pimchanok", lastName: "Jaidee", dob: "2000-08-14", phone: "0888888888", allergic: "None" },
+  { id: 9, firstName: "Thanawat", lastName: "Srisuk", dob: "1983-04-05", phone: "0899999999", allergic: "None" },
+  { id: 10, firstName: "Oranicha", lastName: "Thongsuk", dob: "1993-10-19", phone: "0810000000", allergic: "Penicillin" },
+  { id: 11, firstName: "Saran", lastName: "Apirak", dob: "1987-06-12", phone: "0821111111", allergic: "None" },
+  { id: 12, firstName: "Nicha", lastName: "Prasert", dob: "1996-02-28", phone: "0832222222", allergic: "Latex" },
+  { id: 13, firstName: "Tawan", lastName: "Kritsana", dob: "1991-09-07", phone: "0843333333", allergic: "None" },
+  { id: 14, firstName: "Jira", lastName: "Siriwan", dob: "1978-12-15", phone: "0854444444", allergic: "Codeine" },
+  { id: 15, firstName: "Ploy", lastName: "Chutima", dob: "2002-05-03", phone: "0865555555", allergic: "None" },
 ];
 const initDoctors = [
   { id: 1, firstName: "Wanchai", lastName: "Pongpat", specialty: "Cardiology", phone: "0821111111" },
@@ -173,6 +185,7 @@ function Patients({ patients, setPatients }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [lastQuery, setLastQuery] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const openAdd = () => { setForm({ firstName:"", lastName:"", dob:"", phone:"", allergic:"" }); setModal("add"); };
   const openEdit = (p) => { setForm({ ...p }); setModal("edit"); };
@@ -197,36 +210,60 @@ function Patients({ patients, setPatients }) {
 
   const viewAll = () => setLastQuery(`MATCH (p:Patient)\nRETURN p.patientId, p.firstName, p.lastName,\n       p.dob, p.phone, p.allergic\nORDER BY p.lastName`);
 
+  const filteredPatients = patients.filter(p => {
+    const term = searchTerm.toLowerCase();
+    return (
+      p.firstName.toLowerCase().includes(term) ||
+      p.lastName.toLowerCase().includes(term) ||
+      p.phone.includes(term)
+    );
+  });
+
   return (
     <div>
       <SectionHeader title="Patient Management" onAdd={openAdd} />
       <Btn variant="ghost" onClick={viewAll} style={{ marginBottom: 16, fontSize: 12 }}>Show READ Query</Btn>
-      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0", overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr style={{ background: "#F8FAFC" }}>
-            {["ID","Name","DOB","Phone","Allergic","Actions"].map(h => (
-              <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748B", borderBottom: "1px solid #E2E8F0" }}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>{patients.map(p => (
-            <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
-              <td style={{ padding: "12px 16px", fontSize: 13, color: "#64748B" }}>#{p.id}</td>
-              <td style={{ padding: "12px 16px", fontWeight: 600, fontSize: 14 }}>{p.firstName} {p.lastName}</td>
-              <td style={{ padding: "12px 16px", fontSize: 13, color: "#64748B" }}>{p.dob}</td>
-              <td style={{ padding: "12px 16px", fontSize: 13 }}>{p.phone}</td>
-              <td style={{ padding: "12px 16px" }}>
-                <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: p.allergic === "None" ? "#DCFCE7" : "#FEF2F2", color: p.allergic === "None" ? "#16A34A" : "#DC2626" }}>{p.allergic}</span>
-              </td>
-              <td style={{ padding: "12px 16px" }}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <Btn onClick={() => openEdit(p)} variant="ghost" style={{ padding: "4px 12px", fontSize: 12 }}>Edit</Btn>
-                  <Btn onClick={() => del(p.id, `${p.firstName} ${p.lastName}`)} variant="danger" style={{ padding: "4px 12px", fontSize: 12 }}>Delete</Btn>
-                </div>
-              </td>
-            </tr>
-          ))}</tbody>
-        </table>
+      <div style={{ marginBottom: 16 }}>
+        <input
+          type="text"
+          placeholder="Search patients by name or phone..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{ ...fieldStyle, width: 320 }}
+        />
       </div>
+      {filteredPatients.length === 0 ? (
+        <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 14, background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0" }}>
+          No patients found
+        </div>
+      ) : (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0", overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: "#F8FAFC" }}>
+              {["ID","Name","DOB","Phone","Allergic","Actions"].map(h => (
+                <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#64748B", borderBottom: "1px solid #E2E8F0" }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>{filteredPatients.map(p => (
+              <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                <td style={{ padding: "12px 16px", fontSize: 13, color: "#64748B" }}>#{p.id}</td>
+                <td style={{ padding: "12px 16px", fontWeight: 600, fontSize: 14 }}>{p.firstName} {p.lastName}</td>
+                <td style={{ padding: "12px 16px", fontSize: 13, color: "#64748B" }}>{p.dob}</td>
+                <td style={{ padding: "12px 16px", fontSize: 13 }}>{p.phone}</td>
+                <td style={{ padding: "12px 16px" }}>
+                  <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: p.allergic === "None" ? "#DCFCE7" : "#FEF2F2", color: p.allergic === "None" ? "#16A34A" : "#DC2626" }}>{p.allergic}</span>
+                </td>
+                <td style={{ padding: "12px 16px" }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn onClick={() => openEdit(p)} variant="ghost" style={{ padding: "4px 12px", fontSize: 12 }}>Edit</Btn>
+                    <Btn onClick={() => del(p.id, `${p.firstName} ${p.lastName}`)} variant="danger" style={{ padding: "4px 12px", fontSize: 12 }}>Delete</Btn>
+                  </div>
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
       <CypherBox query={lastQuery} />
       {modal && (
         <Modal title={modal === "add" ? "Add New Patient" : "Edit Patient"} onClose={() => setModal(null)}>
@@ -250,22 +287,48 @@ function Patients({ patients, setPatients }) {
 
 // ─── Doctors ──────────────────────────────────────────────────────────────────
 function Doctors({ doctors }) {
+  const [searchTerm, setSearchTerm] = useState('');
   const colors = ["#0D9488","#7C3AED","#EA580C","#0369A1","#16A34A"];
+
+  const filteredDoctors = doctors.filter(d => {
+    const term = searchTerm.toLowerCase();
+    return (
+      d.firstName.toLowerCase().includes(term) ||
+      d.lastName.toLowerCase().includes(term) ||
+      d.specialty.toLowerCase().includes(term)
+    );
+  });
+
   return (
     <div>
       <SectionHeader title="Doctor Directory" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px,1fr))", gap: 16 }}>
-        {doctors.map((d, i) => (
-          <div key={d.id} style={{ background: "#fff", borderRadius: 16, padding: 24, border: "1px solid #E2E8F0", textAlign: "center" }}>
-            <div style={{ width: 60, height: 60, borderRadius: "50%", background: colors[i%5], display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", fontSize: 22, color: "#fff", fontWeight: 700 }}>
-              {d.firstName[0]}{d.lastName[0]}
-            </div>
-            <div style={{ fontWeight: 700, fontSize: 16, color: DARK }}>Dr. {d.firstName} {d.lastName}</div>
-            <div style={{ fontSize: 13, color: colors[i%5], fontWeight: 600, marginTop: 4 }}>{d.specialty}</div>
-            <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 8 }}>{d.phone}</div>
-          </div>
-        ))}
+      <div style={{ marginBottom: 16 }}>
+        <input
+          type="text"
+          placeholder="Search doctors by name or specialty..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{ ...fieldStyle, width: 320 }}
+        />
       </div>
+      {filteredDoctors.length === 0 ? (
+        <div style={{ padding: 24, textAlign: "center", color: "#64748B", fontSize: 14, background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0" }}>
+          No doctors found
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px,1fr))", gap: 16 }}>
+          {filteredDoctors.map((d, i) => (
+            <div key={d.id} style={{ background: "#fff", borderRadius: 16, padding: 24, border: "1px solid #E2E8F0", textAlign: "center" }}>
+              <div style={{ width: 60, height: 60, borderRadius: "50%", background: colors[i%5], display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", fontSize: 22, color: "#fff", fontWeight: 700 }}>
+                {d.firstName[0]}{d.lastName[0]}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: DARK }}>Dr. {d.firstName} {d.lastName}</div>
+              <div style={{ fontSize: 13, color: colors[i%5], fontWeight: 600, marginTop: 4 }}>{d.specialty}</div>
+              <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 8 }}>{d.phone}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <CypherBox query={`MATCH (d:Doctor)\nRETURN d.doctorId, d.firstName, d.lastName,\n       d.specialty, d.phone\nORDER BY d.specialty`} />
     </div>
   );
